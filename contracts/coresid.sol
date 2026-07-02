@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.27;
 
-import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ERC721Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 interface IERC5192 {
@@ -11,10 +14,20 @@ interface IERC5192 {
     function locked(uint256 tokenId) external view returns (bool);
 }
 
-contract CoresID is ERC721, Ownable, IERC5192 {
+contract CoresID is
+    ERC721Upgradeable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
+    EIP712Upgradeable,
+    IERC5192
+{
     using Strings for uint256;
 
     uint256 public constant MAX_SEEDS = 5;
+
+    bytes32 public constant MINT_AUTH_TYPEHASH = keccak256(
+        "MintAuthorization(address core,address seed,uint256 deadline)"
+    );
 
     mapping(address core => mapping(address seed => bool)) public isNominated;
     mapping(address seed => address core) public coreOfSeed;
@@ -41,13 +54,24 @@ contract CoresID is ERC721, Ownable, IERC5192 {
     error AlreadyMinted(address seed, address core);
     error SeedNotLinked(address seed);
     error TokenIsSoulbound();
+    error MintAuthExpired();
+    error InvalidSigner();
 
-    constructor(string memory baseURI_, address initialOwner)
-        ERC721("CoresID", "CRID")
-        Ownable(initialOwner)
-    {
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(string memory baseURI_, address initialOwner) external initializer {
+        __ERC721_init("CoresID", "CRID");
+        __Ownable_init(initialOwner);
+        __UUPSUpgradeable_init();
+        __EIP712_init("CoresID", "1");
         baseURI = baseURI_;
     }
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    // ---- Core functions ----
 
     function nominate(address[] calldata seeds) external {
         if (seeds.length == 0) revert ZeroAddress();
@@ -99,27 +123,24 @@ contract CoresID is ERC721, Ownable, IERC5192 {
     }
 
     function mint(address core) external returns (uint256 tokenId) {
-        if (!isNominated[core][msg.sender]) revert NotNominated(core, msg.sender);
-        if (coreOfSeed[msg.sender] != address(0)) revert SeedAlreadyLinked(msg.sender);
-        if (seedCount[core] >= MAX_SEEDS) revert MaxSeedsExceeded(core);
+        return _mintSeed(core, msg.sender);
+    }
 
-        isNominated[core][msg.sender] = false;
-        coreOfSeed[msg.sender] = core;
-        _removePendingSeed(core, msg.sender);
-        _linkedSeeds[core].push(msg.sender);
+    function mintFor(
+        address core,
+        address seed,
+        uint256 deadline,
+        bytes calldata signature
+    ) external returns (uint256 tokenId) {
+        if (block.timestamp > deadline) revert MintAuthExpired();
 
-        unchecked {
-            ++seedCount[core];
-        }
+        address signer = ECDSA.recover(
+            _hashTypedDataV4(keccak256(abi.encode(MINT_AUTH_TYPEHASH, core, seed, deadline))),
+            signature
+        );
+        if (signer != seed) revert InvalidSigner();
 
-        uint256 level = seedCount[core];
-
-        if (level == 1) {
-            tokenId = coreTokenId[core];
-            emit Locked(tokenId);
-        }
-
-        emit Minted(core, msg.sender, level);
+        return _mintSeed(core, seed);
     }
 
     function revoke(address seed) external {
@@ -135,6 +156,34 @@ contract CoresID is ERC721, Ownable, IERC5192 {
 
         emit Revoked(msg.sender, seed, seedCount[msg.sender]);
     }
+
+    // ---- Internal ----
+
+    function _mintSeed(address core, address seed) private returns (uint256 tokenId) {
+        if (!isNominated[core][seed]) revert NotNominated(core, seed);
+        if (coreOfSeed[seed] != address(0)) revert SeedAlreadyLinked(seed);
+        if (seedCount[core] >= MAX_SEEDS) revert MaxSeedsExceeded(core);
+
+        isNominated[core][seed] = false;
+        coreOfSeed[seed] = core;
+        _removePendingSeed(core, seed);
+        _linkedSeeds[core].push(seed);
+
+        unchecked {
+            ++seedCount[core];
+        }
+
+        uint256 level = seedCount[core];
+
+        if (level == 1) {
+            tokenId = coreTokenId[core];
+            emit Locked(tokenId);
+        }
+
+        emit Minted(core, seed, level);
+    }
+
+    // ---- Views ----
 
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         _requireOwned(tokenId);
@@ -156,6 +205,8 @@ contract CoresID is ERC721, Ownable, IERC5192 {
         return interfaceId == type(IERC5192).interfaceId || super.supportsInterface(interfaceId);
     }
 
+    // ---- Soulbound ----
+
     function _update(address to, uint256 tokenId, address auth) internal override returns (address) {
         address from = _ownerOf(tokenId);
         if (from != address(0)) revert TokenIsSoulbound();
@@ -164,6 +215,8 @@ contract CoresID is ERC721, Ownable, IERC5192 {
 
     function approve(address, uint256) public pure override { revert TokenIsSoulbound(); }
     function setApprovalForAll(address, bool) public pure override { revert TokenIsSoulbound(); }
+
+    // ---- Storage helpers ----
 
     function _removePendingSeed(address core, address seed) private {
         address[] storage list = _pendingSeeds[core];

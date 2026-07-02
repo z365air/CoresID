@@ -1,4 +1,4 @@
-import type { Address } from "viem";
+import type { Address, TypedDataDomain, TypedDataParameter } from "viem";
 
 export const CORESID_CHAIN_ID = 8453;
 export const CORESID_CHAIN = {
@@ -15,6 +15,21 @@ export const CORESID_CONTRACT_ADDRESS =
 
 export const CORESID_EXPLORER_URL = `https://basescan.org/address/${CORESID_CONTRACT_ADDRESS}`;
 export const CORESID_TX_URL = (hash: string) => `https://basescan.org/tx/${hash}`;
+
+export const CORESID_EIP712_DOMAIN: TypedDataDomain = {
+  name: "CoresID",
+  version: "1",
+  chainId: CORESID_CHAIN_ID,
+  verifyingContract: CORESID_CONTRACT_ADDRESS,
+};
+
+export const MINT_AUTH_TYPE = {
+  MintAuthorization: [
+    { name: "core", type: "address" },
+    { name: "seed", type: "address" },
+    { name: "deadline", type: "uint256" },
+  ],
+} as const satisfies Record<string, TypedDataParameter[]>;
 
 export const CORESID_ABI = [
   {
@@ -82,6 +97,25 @@ export const CORESID_ABI = [
     name: "revoke",
     inputs: [{ name: "seed", type: "address" }],
     outputs: [],
+  },
+  {
+    type: "function",
+    stateMutability: "nonpayable",
+    name: "mintFor",
+    inputs: [
+      { name: "core", type: "address" },
+      { name: "seed", type: "address" },
+      { name: "deadline", type: "uint256" },
+      { name: "signature", type: "bytes" },
+    ],
+    outputs: [{ name: "tokenId", type: "uint256" }],
+  },
+  {
+    type: "function",
+    stateMutability: "view",
+    name: "MINT_AUTH_TYPEHASH",
+    inputs: [],
+    outputs: [{ name: "", type: "bytes32" }],
   },
   {
     type: "function",

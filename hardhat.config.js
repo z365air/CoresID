@@ -1,4 +1,6 @@
-require("@nomicfoundation/hardhat-toolbox");
+require("@nomicfoundation/hardhat-ethers");
+require("@nomicfoundation/hardhat-verify");
+require("@openzeppelin/hardhat-upgrades");
 
 module.exports = {
   solidity: {

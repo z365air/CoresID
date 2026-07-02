@@ -1,5 +1,5 @@
 import { encodeFunctionData, isAddress } from "viem";
-import { CORESID_ABI, CORESID_CONTRACT_ADDRESS } from "@/lib/coresid";
+import { CORESID_ABI, CORESID_CONTRACT_ADDRESS, CORESID_EIP712_DOMAIN, MINT_AUTH_TYPE } from "@/lib/coresid";
 import { Attribution } from "ox/erc8021";
 
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
@@ -162,6 +162,22 @@ function respondPaymentRequired(url: string, calldata: string, core: string) {
             calldata: { type: "string" },
           },
           required: ["address", "chainId", "functionName", "args", "calldata"],
+        },
+      },
+      "eip712": {
+        info: {
+          domain: CORESID_EIP712_DOMAIN,
+          types: MINT_AUTH_TYPE,
+          primaryType: "MintAuthorization",
+        },
+        schema: {
+          type: "object",
+          properties: {
+            domain: { type: "object" },
+            types: { type: "object" },
+            primaryType: { type: "string" },
+          },
+          required: ["domain", "types", "primaryType"],
         },
       },
     },

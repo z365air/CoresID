@@ -7,11 +7,7 @@ import {
   MINT_AUTH_TYPE,
 } from "@/lib/coresid";
 
-const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
-const PRICE_RAW = "100000";
-const PAYMENT_RECIPIENT =
-  process.env.X402_PAYMENT_RECIPIENT ||
-  "0x98b79Ff375ed9E785d9F09c7FE0394DbeF87f1Fa";
+
 
 // GET — x402 discovery for the execute endpoint
 export async function GET(request: Request) {
@@ -25,17 +21,6 @@ export async function GET(request: Request) {
       serviceName: "CoresID",
       tags: ["coresid", "nft", "soulbound", "relay"],
     },
-    accepts: [
-      {
-        scheme: "exact",
-        network: "eip155:8453",
-        amount: PRICE_RAW,
-        asset: USDC_ADDRESS,
-        payTo: PAYMENT_RECIPIENT,
-        maxTimeoutSeconds: 300,
-        extra: { name: "USDC", version: "2" },
-      },
-    ],
     extensions: {
       "eip712": {
         info: {
@@ -100,20 +85,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Verify PAYMENT-SIGNATURE
-    const paymentSignature = request.headers.get("PAYMENT-SIGNATURE");
-    if (!paymentSignature) {
-      return Response.json(
-        { error: "PAYMENT-SIGNATURE header is required" },
-        { status: 402 },
-      );
-    }
-
-    const paymentError = verifyPaymentSignature(paymentSignature);
-    if (paymentError) {
-      return paymentError;
-    }
-
     // Verify EIP-712 signature off-chain
     const { verifyTypedData } = await import("viem/actions");
     const { createPublicClient, http } = await import("viem");
@@ -173,65 +144,4 @@ export async function POST(request: Request) {
   }
 }
 
-function verifyPaymentSignature(signature: string) {
-  try {
-    const payload = JSON.parse(
-      Buffer.from(signature, "base64").toString("utf-8"),
-    );
 
-    if (payload.x402Version !== 2) {
-      return respondJson(400, "invalid_x402_version", "Unsupported x402 version");
-    }
-
-    const accepted = payload.accepted;
-    if (!accepted) {
-      return respondJson(400, "invalid_payload", "Missing 'accepted' field");
-    }
-
-    if (accepted.scheme !== "exact") {
-      return respondJson(400, "invalid_scheme", "Only 'exact' scheme is supported");
-    }
-
-    if (accepted.network !== "eip155:8453") {
-      return respondJson(400, "invalid_network", "Only Base mainnet is supported");
-    }
-
-    if (accepted.amount !== PRICE_RAW) {
-      return respondJson(400, "invalid_exact_evm_payload_authorization_value_mismatch", `Amount must be ${PRICE_RAW}`);
-    }
-
-    if (accepted.asset?.toLowerCase() !== USDC_ADDRESS.toLowerCase()) {
-      return respondJson(400, "invalid_payload", "Asset must be USDC on Base");
-    }
-
-    if (accepted.payTo?.toLowerCase() !== PAYMENT_RECIPIENT.toLowerCase()) {
-      return respondJson(400, "invalid_exact_evm_payload_recipient_mismatch", "Recipient mismatch");
-    }
-
-    return null;
-  } catch {
-    return respondJson(400, "invalid_payload", "Failed to parse PAYMENT-SIGNATURE");
-  }
-}
-
-function respondJson(status: number, code: string, message: string) {
-  const settlementResponse = {
-    success: false,
-    errorReason: code,
-    transaction: "",
-    network: "eip155:8453",
-    payer: "",
-  };
-
-  return Response.json(
-    { error: message, code },
-    {
-      status,
-      headers: {
-        "Content-Type": "application/json",
-        "PAYMENT-RESPONSE":
-          Buffer.from(JSON.stringify(settlementResponse)).toString("base64"),
-      },
-    },
-  );
-}

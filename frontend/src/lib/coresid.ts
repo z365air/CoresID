@@ -11,7 +11,7 @@ export const CORESID_CHAIN = {
 
 export const CORESID_CONTRACT_ADDRESS =
   (process.env.NEXT_PUBLIC_CORESID_CONTRACT_ADDRESS as Address | undefined) ??
-  "0xbF81a03b8eecf0Bf8eFEe1D5622e25876D0b82cd";
+  "0xd7d05DcE1052aB52D7f8ba76846143C12454aF09";
 
 export const CORESID_EXPLORER_URL = `https://basescan.org/address/${CORESID_CONTRACT_ADDRESS}`;
 export const CORESID_TX_URL = (hash: string) => `https://basescan.org/tx/${hash}`;

@@ -21,6 +21,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased" suppressHydrationWarning>
       <head>
+        <meta name="base:app_id" content="6a07382f9327121b55779ac1" />
         <script
           dangerouslySetInnerHTML={{
             __html: `

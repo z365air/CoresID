@@ -154,10 +154,6 @@ contract CoresID is
         return _mintSeed(core, seed);
     }
 
-    function ownerMint(address core, address seed) external onlyOwner returns (uint256 tokenId) {
-        return _mintSeed(core, seed);
-    }
-
     function revoke(address seed) external {
         if (coreOfSeed[seed] != msg.sender) revert SeedNotLinked(seed);
         if (seedCount[msg.sender] == 0) revert SeedNotLinked(seed);

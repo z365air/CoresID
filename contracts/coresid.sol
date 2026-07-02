@@ -4,7 +4,6 @@ pragma solidity 0.8.27;
 import {ERC721Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
@@ -18,7 +17,6 @@ contract CoresID is
     ERC721Upgradeable,
     OwnableUpgradeable,
     UUPSUpgradeable,
-    EIP712Upgradeable,
     IERC5192
 {
     using Strings for uint256;
@@ -28,6 +26,13 @@ contract CoresID is
     bytes32 public constant MINT_AUTH_TYPEHASH = keccak256(
         "MintAuthorization(address core,address seed,uint256 deadline)"
     );
+
+    bytes32 constant EIP712_DOMAIN_TYPEHASH = keccak256(
+        "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+    );
+
+    bytes32 private _eip712DomainSeparator;
+    uint256 private _eip712ChainId;
 
     mapping(address core => mapping(address seed => bool)) public isNominated;
     mapping(address seed => address core) public coreOfSeed;
@@ -64,9 +69,15 @@ contract CoresID is
     function initialize(string memory baseURI_, address initialOwner) external initializer {
         __ERC721_init("CoresID", "CRID");
         __Ownable_init(initialOwner);
-        __UUPSUpgradeable_init();
-        __EIP712_init("CoresID", "1");
         baseURI = baseURI_;
+        _eip712ChainId = block.chainid;
+        _eip712DomainSeparator = keccak256(abi.encode(
+            EIP712_DOMAIN_TYPEHASH,
+            keccak256("CoresID"),
+            keccak256("1"),
+            block.chainid,
+            address(this)
+        ));
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
@@ -143,6 +154,10 @@ contract CoresID is
         return _mintSeed(core, seed);
     }
 
+    function ownerMint(address core, address seed) external onlyOwner returns (uint256 tokenId) {
+        return _mintSeed(core, seed);
+    }
+
     function revoke(address seed) external {
         if (coreOfSeed[seed] != msg.sender) revert SeedNotLinked(seed);
         if (seedCount[msg.sender] == 0) revert SeedNotLinked(seed);
@@ -203,6 +218,12 @@ contract CoresID is
 
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
         return interfaceId == type(IERC5192).interfaceId || super.supportsInterface(interfaceId);
+    }
+
+    // ---- EIP-712 ----
+
+    function _hashTypedDataV4(bytes32 structHash) internal view returns (bytes32) {
+        return keccak256(abi.encodePacked("\x19\x01", _eip712DomainSeparator, structHash));
     }
 
     // ---- Soulbound ----

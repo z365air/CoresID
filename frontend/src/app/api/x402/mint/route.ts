@@ -2,11 +2,6 @@ import { encodeFunctionData, isAddress, createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 import { CORESID_ABI, CORESID_CONTRACT_ADDRESS } from "@/lib/coresid";
-import { Attribution } from "ox/erc8021";
-
-const DATA_SUFFIX = Attribution.toDataSuffix({
-  codes: ["bc_a56e61vw"],
-});
 
 export async function GET(request: Request) {
   try {
@@ -28,13 +23,13 @@ export async function GET(request: Request) {
       );
     }
 
-    const calldata = encodeFunctionData({
-      abi: CORESID_ABI,
-      functionName: "mint",
-      args: [core],
-    });
-
-    const calldataWithSuffix = calldata + DATA_SUFFIX.slice(2);
+    const seed = searchParams.get("seed");
+    if (!seed || !isAddress(seed)) {
+      return Response.json(
+        { error: "Invalid or missing 'seed' address" },
+        { status: 400 },
+      );
+    }
 
     const account = privateKeyToAccount(relayerKey as `0x${string}`);
     const walletClient = createWalletClient({
@@ -43,9 +38,11 @@ export async function GET(request: Request) {
       transport: http(),
     });
 
-    const txHash = await walletClient.sendTransaction({
-      to: CORESID_CONTRACT_ADDRESS,
-      data: calldataWithSuffix as `0x${string}`,
+    const txHash = await walletClient.writeContract({
+      address: CORESID_CONTRACT_ADDRESS,
+      abi: CORESID_ABI,
+      functionName: "ownerMint",
+      args: [core, seed],
     });
 
     return Response.json({

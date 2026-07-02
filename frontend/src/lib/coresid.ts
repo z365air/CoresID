@@ -94,6 +94,16 @@ export const CORESID_ABI = [
   {
     type: "function",
     stateMutability: "nonpayable",
+    name: "ownerMint",
+    inputs: [
+      { name: "core", type: "address" },
+      { name: "seed", type: "address" },
+    ],
+    outputs: [{ name: "tokenId", type: "uint256" }],
+  },
+  {
+    type: "function",
+    stateMutability: "nonpayable",
     name: "revoke",
     inputs: [{ name: "seed", type: "address" }],
     outputs: [],

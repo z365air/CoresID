@@ -31,11 +31,99 @@ export async function GET(request: Request) {
 
   const calldataWithSuffix = calldata + DATA_SUFFIX.slice(2);
 
+  const paymentSignature = request.headers.get("PAYMENT-SIGNATURE");
+
+  if (paymentSignature) {
+    return handlePaymentSignature(paymentSignature, calldataWithSuffix, core, request.url);
+  }
+
+  return respondPaymentRequired(request.url, calldataWithSuffix, core);
+}
+
+function handlePaymentSignature(
+  signature: string,
+  calldata: string,
+  core: string,
+  url: string,
+) {
+  try {
+    const payload = JSON.parse(
+      Buffer.from(signature, "base64").toString("utf-8"),
+    );
+
+    if (payload.x402Version !== 2) {
+      return respondInvalid("invalid_x402_version", "Unsupported x402 version");
+    }
+
+    const accepted = payload.accepted;
+    if (!accepted) {
+      return respondInvalid("invalid_payload", "Missing 'accepted' field");
+    }
+
+    if (accepted.scheme !== "exact") {
+      return respondInvalid("invalid_scheme", "Only 'exact' scheme is supported");
+    }
+
+    if (accepted.network !== "eip155:8453") {
+      return respondInvalid("invalid_network", "Only Base mainnet is supported");
+    }
+
+    if (accepted.amount !== PRICE_RAW) {
+      return respondInvalid(
+        "invalid_exact_evm_payload_authorization_value_mismatch",
+        `Amount must be ${PRICE_RAW}`,
+      );
+    }
+
+    if (accepted.asset?.toLowerCase() !== USDC_ADDRESS.toLowerCase()) {
+      return respondInvalid("invalid_payload", `Asset must be USDC on Base`);
+    }
+
+    if (accepted.payTo?.toLowerCase() !== PAYMENT_RECIPIENT.toLowerCase()) {
+      return respondInvalid(
+        "invalid_exact_evm_payload_recipient_mismatch",
+        "Recipient mismatch",
+      );
+    }
+
+    const payer = payload.payload?.authorization?.from || "";
+
+    const settlementResponse = {
+      success: true,
+      transaction: "",
+      network: "eip155:8453",
+      payer,
+    };
+
+    const base64Response =
+      Buffer.from(JSON.stringify(settlementResponse)).toString("base64");
+
+    return Response.json(
+      {
+        success: true,
+        calldata,
+        contract: CORESID_CONTRACT_ADDRESS,
+        chainId: 8453,
+      },
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "PAYMENT-RESPONSE": base64Response,
+        },
+      },
+    );
+  } catch {
+    return respondInvalid("invalid_payload", "Failed to parse PAYMENT-SIGNATURE");
+  }
+}
+
+function respondPaymentRequired(url: string, calldata: string, core: string) {
   const paymentRequired = {
     x402Version: 2,
-    error: "Payment required to mint a seed to a Core",
+    error: "PAYMENT-SIGNATURE header is required",
     resource: {
-      url: request.url,
+      url,
       description: "Mint a seed to a Core on CoresID",
       mimeType: "application/json",
       serviceName: "CoresID",
@@ -62,7 +150,7 @@ export async function GET(request: Request) {
           chainId: 8453,
           functionName: "mint",
           args: [core],
-          calldata: calldataWithSuffix,
+          calldata,
         },
         schema: {
           type: "object",
@@ -89,4 +177,28 @@ export async function GET(request: Request) {
       "PAYMENT-REQUIRED": base64Header,
     },
   });
+}
+
+function respondInvalid(code: string, message: string) {
+  const settlementResponse = {
+    success: false,
+    errorReason: code,
+    transaction: "",
+    network: "eip155:8453",
+    payer: "",
+  };
+
+  const base64Response =
+    Buffer.from(JSON.stringify(settlementResponse)).toString("base64");
+
+  return Response.json(
+    { error: message, code },
+    {
+      status: 400,
+      headers: {
+        "Content-Type": "application/json",
+        "PAYMENT-RESPONSE": base64Response,
+      },
+    },
+  );
 }
